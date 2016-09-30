@@ -1,0 +1,14 @@
+###########################################
+# Demonstrates a linked graph query which
+# filters results not from specified graphs
+# Rya manipulates this into independant
+# `OPTIONAL { GRAPH { <statement_n> } }.`
+###########################################
+SELECT ?graph ?patron ?employee 
+WHERE { 
+GRAPH ?graph { 
+OPTIONAL { ?patron <http://talksTo> ?employee. }. 
+OPTIONAL { ?employee <http://worksAt> <http://CoffeeShop>. }.
+} FILTER regex (str(?graph),"graph1|graph3"). 
+}
+

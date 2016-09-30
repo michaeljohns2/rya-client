@@ -1,11 +1,52 @@
 package com.research.automation.graph.ryacc;
 
 import java.security.InvalidParameterException;
+import java.util.TreeMap;
 
-import com.research.automation.graph.ryacc.RyaccConstants.ManOp;
+import org.apache.commons.lang3.StringUtils;
+import org.apache.log4j.Logger;
+import org.openrdf.query.BindingSet;
+import org.openrdf.query.parser.ParsedQuery;
+import org.openrdf.query.parser.sparql.SPARQLParser;
+import org.openrdf.queryrender.sparql.SPARQLQueryRenderer;
 
-public class RyaccUtils {
+public class RyaccUtils implements RyaccConstants {
 	
+	private static final Logger log = Logger.getLogger(RyaccUtils.class);
+	
+	/**
+	 * Convert an array to a String.
+	 * 
+	 * @param array String[]
+	 * @param delim String
+	 * @return String
+	 */
+	public static String arrayToStr(String[] array, String delim){
+		if (array == null || array.length == 0) return "";
+
+		boolean isFirst = true;
+		String r = "";
+		for (String s : array){
+			r += isFirst? s : delim + s;
+			isFirst = false;
+		}
+		return r;
+	}
+	
+	/**
+	 * Convert a BindingSet to a TreeMap. 
+	 * Using TreeMap to leverage its always sorted properties.
+	 * 
+	 * @param bindingSet BindingSet
+	 * @return TreeMap<String,String>
+	 */
+	public static TreeMap<String,String> bindingSetToTreeMap(BindingSet bindingSet){
+		TreeMap<String,String> map = new TreeMap<>();
+		for (String bname : bindingSet.getBindingNames())
+			map.put(bname, bindingSet.getValue(bname).stringValue());
+		return map;
+	}
+
 	/**
 	 * Apply ManOp(s) to string to ensure conformance of manipulation. 
 	 * 
@@ -29,8 +70,15 @@ public class RyaccUtils {
 				break;
 			case TO_LOWERCASE:
 				if (c != null) c = c.toLowerCase();
+				break;
 			case TRIM:
 				if (c != null) c = c.trim();
+				break;
+			case TO_UPPERCASE:
+				if (c != null) c = c.toUpperCase();
+				break;
+			default:
+				break;
 			}
 		}
 		
@@ -38,17 +86,24 @@ public class RyaccUtils {
 	}
 	
 	/**
-	 * Standardize a string to NULL.
+	 * Convenience for throwing exception on null values.
 	 * 
-	 * Uses ManOp EMPTY_TO_NULL and TRIM
+	 * @param s String 
+	 * @param msg String
+	 * @return String
 	 * 
-	 * @param s
-	 * @return String | null
+	 * @throws InvalidParameterException
 	 */
-	public static String standardize(String s){
-		return manipulate(s, ManOp.EMPTY_TO_NULL,ManOp.TRIM);
-	}
+	public static String mustNotStandardizeToNull(String s, String msg)
+			throws InvalidParameterException {
+		String c = standardize(s);
 
+		if (c == null)
+			throw new InvalidParameterException(msg);
+
+		return c;
+	}
+	
 	/**
 	 * Convenience for throwing exception on param standardization.
 	 * 
@@ -66,20 +121,61 @@ public class RyaccUtils {
 	}
 	
 	/**
-	 * Convenience for throwing exception on null values.
-	 * @param s String 
-	 * @param msg String
-	 * @return String
+	 * Pretty format sparql query using {@link SPARQLParser#parseQuery(String, String)} and
+	 * {@link SPARQLQueryRenderer#render(ParsedQuery)}.
 	 * 
-	 * @throws InvalidParameterException
+	 * @param sparql
+	 * @return String[]
+	 * 
+	 * @throws Exception
 	 */
-	public static String mustNotStandardizeToNull(String s, String msg)
-			throws InvalidParameterException {
-		String c = standardize(s);
+	public static String[] prettyFormatSparql(final String sparql) throws Exception {
+		final SPARQLParser parser = new SPARQLParser();
+		final SPARQLQueryRenderer renderer = new SPARQLQueryRenderer();
+		final ParsedQuery pq = parser.parseQuery(sparql, null);
+		final String prettySparql = renderer.render(pq);
+		return StringUtils.split(prettySparql, '\n');
+	}
+	
+	/**
+	 * Pretty format sparql query for logging.
+	 * Internally calls {@link #prettyFormatSparql(String)}.
+	 * 
+	 * @param sparql String
+	 */
+	public static void prettyLogSparql(final String sparql) {
+		try {
+			// Pretty print.
+			final String[] lines = prettyFormatSparql(sparql);
+			for(final String line : lines) {
+				log.info(line);
+			}
+		} catch (final Exception e) {
+			// Pretty print failed, so ugly print instead.
+			log.info(sparql);
+		}
+	}
 
-		if (c == null)
-			throw new InvalidParameterException(msg);
+	/**
+	 * Standardize a string to NULL.
+	 * 
+	 * Uses ManOp EMPTY_TO_NULL and TRIM
+	 * 
+	 * @param s
+	 * @return String | null
+	 */
+	public static String standardize(String s){
+		return manipulate(s, ManOp.EMPTY_TO_NULL,ManOp.TRIM);
+	}
 
-		return c;
+	/**
+	 * Exposing method for clarity that treeMap is required for standardized String.
+	 * This is used to populate JSONObjects, often from BindingSets after queries.
+	 * 
+	 * @param treeMap TreeMap<String,String>
+	 * @return String
+	 */
+	public static String toStandardizedStr(TreeMap<String,String> treeMap){
+		return treeMap.toString();
 	}
 }
