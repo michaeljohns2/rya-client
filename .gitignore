@@ -1,5 +1,7 @@
 bin
 target
 extra-lib
-rya-lib
-test-lib
+/.classpath
+/.project
+/.settings/
+/.gitignore
