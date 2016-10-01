@@ -1,28 +1,35 @@
-package com.research.automation.graph.ryacc;
+package com.research.automation.graph.ryacc.test.testee;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
 
 import org.apache.log4j.Logger;
 import org.json.JSONArray;
 import org.json.JSONObject;
-import org.junit.Test;
 
-public class MergeResultsTest extends RyaccBaseTest{
+import com.research.automation.graph.ryacc.AbstractRyaccTester;
+import com.research.automation.graph.ryacc.JsonUtils;
+import com.research.automation.graph.ryacc.RyaccStatementer;
+import com.research.automation.graph.ryacc.Wrap;
+import com.research.automation.graph.ryacc.RyaccConstants.MergeConflictRule;
+import com.research.automation.graph.ryacc.RyaccConstants.MergeRule;
 
-	private static final Logger log = Logger.getLogger(MergeResultsTest.class);
-
-	@Test
-	public void mergeResultsTest(){
-		try{
-			
+public class RyaccMergeTestee<T> implements Testee<T>{
+	
+	private static final Logger log = Logger.getLogger(RyaccMergeTestee.class);
+	
+	@Override
+	public void doTest(AbstractRyaccTester<T> tester) throws Exception{
+		
+		    RyaccStatementer<T> rs = tester.getRs(); 
+		    T ryaT = tester.getRyaT();
+		
 			log.info("TEST STEP 2 --> SPARQL QUERY (MERGE RESULTS)");
 
 			int expectedCnt = 5;
 			JSONArray resultsRoot = JsonUtils.mergeUnique(
-					rs.sparqlQuery(Wrap.sparqlQueryGraphsLinked(selectParams,whereArr)),
-					rs.sparqlQuery(Wrap.sparqlQueryGraphsLinked(selectParams,whereArr2)));
+					rs.sparqlQueryT(ryaT,Wrap.sparqlQueryGraphsLinked(selectParams,whereArr)),
+					rs.sparqlQueryT(ryaT,Wrap.sparqlQueryGraphsLinked(selectParams,whereArr2)));
 			assertEquals(String.format("Expected count %d (merge results)",expectedCnt),expectedCnt,resultsRoot.length());
 
 			log.info("...VALIDATE RESULTS");
@@ -84,10 +91,5 @@ public class MergeResultsTest extends RyaccBaseTest{
 			assertTrue(String.format("Expected bob object to have key '%s'","graph"),bob.has("graph"));
 			assertEquals(String.format("Expected bob object with key '%s' to have value '%s'","graph",
 					Wrap.http(graph1)),Wrap.http(graph1),bob.getString("graph"));
-			
-		} catch(Exception e){
-			e.printStackTrace();
-			fail(e.getMessage());
-		} 
 	}
 }

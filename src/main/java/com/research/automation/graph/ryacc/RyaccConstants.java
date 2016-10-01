@@ -49,4 +49,5 @@ public interface RyaccConstants {
 			WHERE_CLAUSE_TOKEN+"\n"+
 			"}";
 
+	public static final int COMMIT_EVERY_N = 1000;
 }

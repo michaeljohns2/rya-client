@@ -1,4 +1,4 @@
-package com.research.automation.graph.ryacc;
+package com.research.automation.graph.ryacc.test.mini;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.fail;

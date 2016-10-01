@@ -10,8 +10,13 @@ import org.openrdf.model.ValueFactory;
 import org.openrdf.query.BindingSet;
 import org.openrdf.query.MalformedQueryException;
 import org.openrdf.query.QueryEvaluationException;
+import org.openrdf.query.QueryLanguage;
+import org.openrdf.query.TupleQuery;
 import org.openrdf.query.parser.ParsedQuery;
 import org.openrdf.query.parser.sparql.SPARQLParser;
+import org.openrdf.repository.Repository;
+import org.openrdf.repository.RepositoryConnection;
+import org.openrdf.repository.RepositoryException;
 import org.openrdf.sail.Sail;
 import org.openrdf.sail.SailConnection;
 import org.openrdf.sail.SailException;
@@ -20,51 +25,90 @@ import info.aduna.iteration.CloseableIteration;
 import io.fluo.api.mini.MiniFluo;
 
 public class RyaccStatement  implements RyaccConstants {
-	
+
 	private static final Logger log = Logger.getLogger(RyaccStatement.class);
-	
-	final protected MiniFluo fluo;
-	final protected ValueFactory vf;
-	final protected Sail ryaSail;
-	
+
+	final protected MiniFluo fluo;//May not be used!
+	final protected ValueFactory vf;	
+
 	/**
 	 * Public constructor, results in fluo being null.
-	 * 
-	 * @param ryaSail Sail
+	 *
 	 * @param vf ValueFactory
 	 */
-	public RyaccStatement(Sail ryaSail, ValueFactory vf){
-		this(ryaSail,vf,null);
+	public RyaccStatement(ValueFactory vf){
+		this(vf,null);
 	}
-	
+
 	/**
 	 * Full public contructor.
-	 * 
-	 * @param ryaSail Sail
+	 *
 	 * @param vf ValueFactory
 	 * @param fluo MiniFluo | null
 	 */
-	public RyaccStatement(Sail ryaSail, ValueFactory vf, MiniFluo fluo){
-		this.ryaSail = ryaSail;
+	public RyaccStatement(ValueFactory vf, MiniFluo fluo){
 		this.vf = vf;
 		this.fluo = fluo;
 	}
 
-	
 	/**
-	 * Add Statements to Rya.
+	 * Add Statements to Rya, using a {@link Repository} instance.
 	 * 
+	 * @param ryaRepo Repository
+	 * @param statements Statement vararg
+	 *
+	 * @throws RepositoryException
+	 */
+	public void addStatements(Repository ryaRepo, Statement... statements) throws RepositoryException {
+		RepositoryConnection ryaConn = ryaRepo.getConnection();
+		try{
+			log.info("");
+			log.info("Loading the following statements:");
+			ryaConn.begin();
+			int count = 0;
+			for(final Statement statement : statements) {
+				count ++;
+				log.info("    " + statement.toString());
+
+				if (statement.getContext() != null){
+					ryaConn.add(statement.getSubject(), statement.getPredicate(), statement.getObject(), statement.getContext());
+				}
+				else 
+					ryaConn.add(statement.getSubject(), statement.getPredicate(), statement.getObject());
+
+				if (count % COMMIT_EVERY_N == 0){
+					log.info(String.format("...committing next insert batch at n == '%d'",count));
+					ryaConn.commit();
+				}
+			}
+			log.info("");
+
+			if (fluo != null)
+				fluo.waitForObservers();		
+
+		} finally {
+			ryaConn.commit();//MLJ: commit should be called
+			ryaConn.close();
+		}
+	}
+
+	/**
+	 * Add Statements to Rya using a {@link Sail} instance.
+	 * 
+	 * @param ryaSail
 	 * @param statements Statement vararg
 	 * 
 	 * @throws SailException
 	 */
-	public void addStatements(Statement... statements) throws SailException{
+	public void addStatements(Sail ryaSail, Statement... statements) throws SailException{
 		SailConnection ryaConn = ryaSail.getConnection();
 		try{
 			log.info("");
 			log.info("Loading the following statements:");
 			ryaConn.begin();
+			int count = 0;
 			for(final Statement statement : statements) {
+				count ++;
 				log.info("    " + statement.toString());
 
 				if (statement.getContext() != null){
@@ -72,6 +116,11 @@ public class RyaccStatement  implements RyaccConstants {
 				}
 				else 
 					ryaConn.addStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
+
+				if (count % COMMIT_EVERY_N == 0){
+					log.info(String.format("...committing next insert batch at n == '%d'",count));
+					ryaConn.commit();
+				}
 			}
 			log.info("");
 
@@ -108,7 +157,7 @@ public class RyaccStatement  implements RyaccConstants {
 	public Statement createStatement(Resource s, URI p, Value o, Resource g){
 		return vf.createStatement(s,p,o,g);
 	}
-	
+
 	/**
 	 * Create a Statement.
 	 * All *Uri params will be converted to {@link org.openrdf.model.URI} by 
@@ -144,7 +193,7 @@ public class RyaccStatement  implements RyaccConstants {
 				oVal, 
 				vf.createURI(gUri));
 	}
-    
+
 	/**
 	 * Create a Statement.
 	 * All params will be converted to {@link org.openrdf.model.URI} by 
@@ -196,7 +245,7 @@ public class RyaccStatement  implements RyaccConstants {
 		return Wrap.isSparqlUri(val) ? vf.createURI(val) : vf.createLiteral(val,
 				vf.createURI("http://www.w3.org/2001/XMLSchema#string"));
 	}
-	
+
 	/**
 	 * Create Value, specifying data type URI.
 	 * If {@link Wrap#isSparqlUri(String)} then use 
@@ -213,21 +262,66 @@ public class RyaccStatement  implements RyaccConstants {
 	public Value createValue(String val, URI dataTypeUri){
 		return Wrap.isSparqlUri(val) ? vf.createURI(val) : vf.createLiteral(val,dataTypeUri);
 	}
-	
+
 	/**
-	 * Execute Sparql Query and return the results.
+	 * Execute Sparql Query into a {@link Repository} instance and return the results.
 	 *
 	 * @param sparql String to use in query
+	 * @param ryaRepo Repository
+	 * @return JSONArray
+	 * 
+	 * @throws QueryEvaluationException 
+	 * @throws RepositoryException 
+	 * @throws MalformedQueryException 
+	 */
+	public JSONArray sparqlQuery(Repository ryaRepo, String sparql) throws QueryEvaluationException, RepositoryException, MalformedQueryException {
+
+		JSONArray jRoot = new JSONArray();
+
+		RepositoryConnection ryaConn = ryaRepo.getConnection();
+		CloseableIteration<? extends BindingSet, QueryEvaluationException> result = null;
+
+		try{
+			log.info("Executing the following query: ");
+			RyaccUtils.prettyLogSparql(sparql);
+			log.info("");
+
+			TupleQuery tupleQuery = ryaConn.prepareTupleQuery(QueryLanguage.SPARQL, sparql);
+			result = tupleQuery.evaluate();
+
+			log.info("Results:");
+			while(result.hasNext()) {
+				BindingSet bs = result.next();
+				if (bs != null){
+					log.info("    " + bs);
+					jRoot.put(RyaccUtils.bindingSetToTreeMap(bs));
+				} else log.warn("... bindingset was null (may be norma?)");
+			}
+			log.info("");
+			return jRoot;
+		} finally{
+			if (result != null) result.close();
+			ryaConn.close();
+		}
+	}
+
+	/**
+	 * Execute Sparql Query into a {@link Sail} instance and return the results.
+	 *
+	 * @param sparql String to use in query
+	 * @param ryaSail Sail
 	 * @return JSONArray
 	 * 
 	 * @throws SailException
 	 * @throws MalformedQueryException
 	 * @throws QueryEvaluationException
 	 */
-	public JSONArray sparqlQuery(String sparql) throws SailException, MalformedQueryException, QueryEvaluationException{
+	public JSONArray sparqlQuery(Sail ryaSail, String sparql) throws SailException, MalformedQueryException, QueryEvaluationException{
 
 		JSONArray jRoot = new JSONArray();
+
 		SailConnection ryaConn = ryaSail.getConnection();
+		CloseableIteration<? extends BindingSet, QueryEvaluationException> result = null;
 
 		try{
 			log.debug("Executing the following query: ");
@@ -254,32 +348,31 @@ public class RyaccStatement  implements RyaccConstants {
 				The TupleQueryResult.
 			 */
 
-			final CloseableIteration<? extends BindingSet, QueryEvaluationException> result = ryaConn.evaluate(
-					parsedQuery.getTupleExpr(), null, null, false);
+			result = ryaConn.evaluate(parsedQuery.getTupleExpr(), null, null, false);
 
 			log.debug("Results:");
 			while(result.hasNext()) {
-				BindingSet bs = result.next();
-				log.debug("    " + bs);
-				jRoot.put(RyaccUtils.bindingSetToTreeMap(bs));
+				BindingSet bs = result.next();				
+				if (bs != null){
+					log.info("    " + bs);
+					jRoot.put(RyaccUtils.bindingSetToTreeMap(bs));
+				} else log.warn("... bindingset was null (may be norma?)");
 			}
 			log.debug("");
 			return jRoot;
+
 		} finally{
+			if (result != null) result.close();
 			ryaConn.close();
-		}
+		} 
 	}
-	
+
 	//##############################################################################################################
 	// GETTERS
 	//##############################################################################################################
-	
+
 	public MiniFluo getFluo() {
 		return fluo;
-	}
-
-	public Sail getRyaSail() {
-		return ryaSail;
 	}
 
 	public ValueFactory getVf() {

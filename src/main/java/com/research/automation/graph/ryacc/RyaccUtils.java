@@ -5,6 +5,7 @@ import java.util.TreeMap;
 
 import org.apache.commons.lang3.StringUtils;
 import org.apache.log4j.Logger;
+import org.openrdf.model.Value;
 import org.openrdf.query.BindingSet;
 import org.openrdf.query.parser.ParsedQuery;
 import org.openrdf.query.parser.sparql.SPARQLParser;
@@ -42,8 +43,11 @@ public class RyaccUtils implements RyaccConstants {
 	 */
 	public static TreeMap<String,String> bindingSetToTreeMap(BindingSet bindingSet){
 		TreeMap<String,String> map = new TreeMap<>();
-		for (String bname : bindingSet.getBindingNames())
-			map.put(bname, bindingSet.getValue(bname).stringValue());
+		for (String bname : bindingSet.getBindingNames()){
+			Value v = bindingSet.getValue(bname);
+			if (v != null)
+				map.put(bname, v.stringValue());
+		}
 		return map;
 	}
 
